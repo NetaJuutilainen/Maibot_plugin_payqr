@@ -23,7 +23,7 @@
 把你的收款码图片命名为 `qr.png`（或任意名字，见配置项），放到插件数据目录：
 
 ```
-MaiBot/data/plugins/github.luori7hao.payqr/qr.png
+MaiBot/data/plugins/github.netajuutilainen.payqr/qr.png
 ```
 
 - 支持 `png / jpg / jpeg / bmp / webp`，大小 ≤ 10 MB；

@@ -16,9 +16,9 @@ from typing import Any, ClassVar
 from maibot_sdk import Field, MaiBotPlugin, PluginConfigBase, Tool
 from maibot_sdk.types import CONFIG_RELOAD_SCOPE_SELF
 
-SUPPORTED_CONFIG_VERSION = "0.1.0"
+SUPPORTED_CONFIG_VERSION = "0.1.1"
 
-PLUGIN_ID = "github.luori7hao.payqr"
+PLUGIN_ID = "github.netajuutilainen.payqr"
 
 SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
