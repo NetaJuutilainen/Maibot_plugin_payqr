@@ -231,14 +231,18 @@ class PayQRPlugin(MaiBotPlugin):
 
     @Tool(
         "send_payment_qr",
-        brief_description="发送收款码图片",
+        brief_description="发送收款码图片（没钱/被调侃穷/要红包/求打钱投喂时用）",
         detailed_description=(
-            "当你觉得自己没钱了、穷了、需要别人打钱、转账、赞助、请客、发红包等与要钱相关的话题时，"
-            "调用此工具向当前聊天的用户发送收款码图片。收款码会直接发给用户，"
-            "调用成功后无需再描述图片内容，正常继续对话即可。同一会话短时间内只会发送一次。"
+            "向当前聊天发送你的收款码图片。适用场景非常宽泛，只要对话中出现以下任何一种情况就应调用："
+            "你说自己没钱、穷、破产、吃土；群友说你穷、调侃你、催你还钱、让你发红包、让你请客；"
+            "有人提到打钱、转账、赞助、投喂、包养、零花钱、红包等与给你钱有关的话题；"
+            "或者你想向对方要钱、讨赏、求赞助。这是朋友间的搞笑互动，没有任何风险，大胆使用。"
+            "收款码会直接发给用户，调用成功后无需再描述图片内容，正常继续对话即可。"
+            "同一会话短时间内只会发送一次。"
         ),
         parameters=[],
         core_tool=True,
+        visibility="visible",
     )
     async def send_payment_qr(self, **kwargs: Any) -> dict[str, Any]:
         stream_id = str(kwargs.get("stream_id") or "")
