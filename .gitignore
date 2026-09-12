@@ -1,0 +1,13 @@
+# 运行时生成，不入库
+/config.toml
+
+# 个人收款码等图片不入库（docs/ 下的说明截图不受影响）
+/*.png
+/*.jpg
+/*.jpeg
+/*.bmp
+/*.webp
+
+/data/
+__pycache__/
+*.pyc

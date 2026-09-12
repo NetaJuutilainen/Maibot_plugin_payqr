@@ -1,0 +1,17 @@
+{
+  "manifest_version": 2,
+  "id": "github.luori7hao.payqr",
+  "version": "0.1.0",
+  "name": "PayQR 收款码",
+  "description": "当 LLM 觉得自己没钱、想收打钱/转账/赞助/红包时，自动发送你配置的收款码图片",
+  "author": { "name": "luori7hao", "url": "https://github.com/luori7hao" },
+  "license": "MIT",
+  "urls": { "repository": "https://github.com/luori7hao/maibot_plugin_payqr" },
+  "host_application": { "min_version": "1.0.0", "max_version": "1.99.99" },
+  "sdk": { "min_version": "2.5.0", "max_version": "2.99.99" },
+  "dependencies": [],
+  "capabilities": ["send.hybrid", "send.image", "send.text"],
+  "i18n": { "default_locale": "zh-CN" },
+  "plugin_type": "tool",
+  "display": { "icon": { "type": "emoji", "value": "🤑" } }
+}
