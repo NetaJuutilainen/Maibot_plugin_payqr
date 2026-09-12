@@ -1,4 +1,4 @@
-# maibot_plugin_payqr
+# 麦麦赛博讨口子（maibot_plugin_payqr）
 
 当 MaiBot 的 LLM 在对话中觉得自己**没钱了、想收打钱/转账/赞助/红包**时，自动发送你配置的收款码图片。
 

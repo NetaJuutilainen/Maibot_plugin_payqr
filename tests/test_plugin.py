@@ -160,7 +160,8 @@ def test_no_caption_single_image_segment(tmp_path):
 
 
 def test_missing_qr_returns_not_configured(tmp_path):
-    plugin = make_plugin(tmp_path, drop_qr=False)
+    # 用一个任何候选目录都不存在的文件名，避免被插件目录兜底路径找到
+    plugin = make_plugin(tmp_path, drop_qr=False, qr_filename="no_such_qr.png")
     result = call_tool(plugin, stream_id="s1")
     assert "不存在" in result["content"], result
     assert plugin._ctx.send.calls == [], "缺图时不应发送"
