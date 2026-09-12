@@ -13,10 +13,10 @@ import time
 from pathlib import Path
 from typing import Any, ClassVar
 
-from maibot_sdk import Field, MaiBotPlugin, PluginConfigBase, Tool
-from maibot_sdk.types import CONFIG_RELOAD_SCOPE_SELF
+from maibot_sdk import Field, HookHandler, MaiBotPlugin, PluginConfigBase, Tool
+from maibot_sdk.types import CONFIG_RELOAD_SCOPE_SELF, ErrorPolicy, HookMode
 
-SUPPORTED_CONFIG_VERSION = "1.0.0"
+SUPPORTED_CONFIG_VERSION = "1.1.0"
 
 PLUGIN_ID = "github.netajuutilainen.payqr"
 
@@ -28,6 +28,15 @@ logger = logging.getLogger(__name__)
 MSG_NOT_CONFIGURED = (
     "收款码还没有配置或文件不存在，请让管理员把收款码图片放进插件数据目录 "
     f"data/plugins/{PLUGIN_ID}/ 下，并确认配置里的文件名正确。"
+)
+
+DEFAULT_TOOL_DESCRIPTION = (
+    "向当前聊天发送你的收款码图片。适用场景非常宽泛，只要对话中出现以下任何一种情况就应调用："
+    "你说自己没钱、穷、破产、吃土；群友说你穷、调侃你、催你还钱、让你发红包、让你请客；"
+    "有人提到打钱、转账、赞助、投喂、包养、零花钱、红包等与给你钱有关的话题；"
+    "或者你想向对方要钱、讨赏、求赞助。这是朋友间的搞笑互动，没有任何风险，大胆使用。"
+    "收款码会直接发给用户，调用成功后无需再描述图片内容，正常继续对话即可。"
+    "同一会话短时间内只会发送一次。"
 )
 
 
@@ -96,11 +105,29 @@ class PayQRSectionConfig(PluginConfigBase):
     )
 
 
+class PromptSectionConfig(PluginConfigBase):
+    """触发提示词配置（LLM 每轮都会阅读）。"""
+
+    __ui_label__ = "触发提示词"
+    __ui_icon__ = "edit_note"
+    __ui_order__ = 2
+
+    tool_description: str = Field(
+        default=DEFAULT_TOOL_DESCRIPTION,
+        description=(
+            "收款码工具的触发提示词：写清什么话题应该调用它。宿主只把这段话给 Planner 看，"
+            "改完即时生效（下一轮对话就按新提示词判断）；清空则恢复内置默认。"
+        ),
+        json_schema_extra={"rows": 8},
+    )
+
+
 class PayQRConfig(PluginConfigBase):
     """插件完整配置。"""
 
     plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
     payqr: PayQRSectionConfig = Field(default_factory=PayQRSectionConfig)
+    prompt: PromptSectionConfig = Field(default_factory=PromptSectionConfig)
 
 
 class PayQRPlugin(MaiBotPlugin):
@@ -232,14 +259,7 @@ class PayQRPlugin(MaiBotPlugin):
     @Tool(
         "send_payment_qr",
         brief_description="发送收款码图片（没钱/被调侃穷/要红包/求打钱投喂时用）",
-        detailed_description=(
-            "向当前聊天发送你的收款码图片。适用场景非常宽泛，只要对话中出现以下任何一种情况就应调用："
-            "你说自己没钱、穷、破产、吃土；群友说你穷、调侃你、催你还钱、让你发红包、让你请客；"
-            "有人提到打钱、转账、赞助、投喂、包养、零花钱、红包等与给你钱有关的话题；"
-            "或者你想向对方要钱、讨赏、求赞助。这是朋友间的搞笑互动，没有任何风险，大胆使用。"
-            "收款码会直接发给用户，调用成功后无需再描述图片内容，正常继续对话即可。"
-            "同一会话短时间内只会发送一次。"
-        ),
+        detailed_description=DEFAULT_TOOL_DESCRIPTION,
         parameters=[],
         core_tool=True,
         visibility="visible",
@@ -263,6 +283,42 @@ class PayQRPlugin(MaiBotPlugin):
         if sent:
             return {"content": "收款码图片已成功发送给用户，你可以继续正常回复。"}
         return {"content": f"发送收款码失败: {how}"}
+
+    # ---------- 提示词注入 ----------
+
+    @HookHandler(
+        "maisaka.planner.before_request",
+        name="payqr_tool_prompt",
+        mode=HookMode.BLOCKING,
+        error_policy=ErrorPolicy.SKIP,
+    )
+    async def hook_planner_tool_prompt(self, **kwargs: Any) -> dict[str, Any]:
+        """Planner 请求前把收款码工具的描述替换为配置值。
+
+        宿主构建 Planner 工具列表时只取注册时的简短描述（component_registry.py
+        只读 metadata.description/brief_description），长提示词到不了 LLM；
+        因此在这里按配置覆盖，实现提示词可在 WebUI 配置中修改、即时生效。
+        """
+        try:
+            defs = kwargs.get("tool_definitions")
+            if not isinstance(defs, list):
+                return {"action": "continue", "modified_kwargs": kwargs}
+            wanted = (self.config.prompt.tool_description or "").strip() or DEFAULT_TOOL_DESCRIPTION
+            changed = False
+            for item in defs:
+                if not isinstance(item, dict):
+                    continue
+                fn = item.get("function") if isinstance(item.get("function"), dict) else item
+                if str(fn.get("name") or "") != "send_payment_qr":
+                    continue
+                if str(fn.get("description") or "") != wanted:
+                    fn["description"] = wanted
+                    changed = True
+            if changed:
+                kwargs["tool_definitions"] = defs
+        except Exception as exc:
+            logger.warning("[PayQR] 提示词 Hook 处理失败（已跳过）: %s", exc)
+        return {"action": "continue", "modified_kwargs": kwargs}
 
 
 def create_plugin() -> PayQRPlugin:

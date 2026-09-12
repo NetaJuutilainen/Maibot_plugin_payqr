@@ -55,7 +55,7 @@ class FakeCtx:
         self.send = FakeSend()
 
 
-def make_plugin(tmp: Path, drop_qr: bool = True, **overrides) -> payqr.PayQRPlugin:
+def make_plugin(tmp: Path, drop_qr: bool = True, prompt: dict | None = None, **overrides) -> payqr.PayQRPlugin:
     data_dir = tmp / "data" / "plugins" / payqr.PLUGIN_ID
     runtime_dir = tmp / "runtime"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -76,6 +76,8 @@ def make_plugin(tmp: Path, drop_qr: bool = True, **overrides) -> payqr.PayQRPlug
             **overrides,
         },
     }
+    if prompt is not None:
+        config["prompt"] = dict(prompt)
     plugin.set_plugin_config(config)
     return plugin
 
@@ -202,6 +204,41 @@ def test_image_cache_invalidated_on_file_change(tmp_path):
     image_calls = [c for c in plugin._ctx.send.calls if c[0] == "hybrid"]
     new_b64 = image_calls[1][1][-1]["content"]
     assert new_b64 == base64.b64encode(bigger).decode("ascii"), "图片变更后应重新读取"
+
+
+def test_hook_rewrites_tool_description(tmp_path):
+    plugin = make_plugin(tmp_path, prompt={"tool_description": "自定义提示词ABC"})
+    defs = [
+        {"type": "function", "function": {"name": "send_payment_qr", "description": "旧描述", "parameters": {}}},
+        {"type": "function", "function": {"name": "reply", "description": "系统工具", "parameters": {}}},
+    ]
+    result = asyncio.run(plugin.hook_planner_tool_prompt(tool_definitions=defs, session_id="s1"))
+    assert result["action"] == "continue"
+    out = result["modified_kwargs"]["tool_definitions"]
+    assert out[0]["function"]["description"] == "自定义提示词ABC"
+    assert out[1]["function"]["description"] == "系统工具", "不得改动其他工具的描述"
+
+
+def test_hook_supports_flat_schema(tmp_path):
+    plugin = make_plugin(tmp_path, prompt={"tool_description": "自定义提示词ABC"})
+    defs = [{"name": "send_payment_qr", "description": "旧描述", "parameters": {}}]
+    result = asyncio.run(plugin.hook_planner_tool_prompt(tool_definitions=defs))
+    assert result["modified_kwargs"]["tool_definitions"][0]["description"] == "自定义提示词ABC"
+
+
+def test_hook_falls_back_to_default_when_empty(tmp_path):
+    plugin = make_plugin(tmp_path, prompt={"tool_description": "   "})
+    defs = [{"type": "function", "function": {"name": "send_payment_qr", "description": "旧描述", "parameters": {}}}]
+    result = asyncio.run(plugin.hook_planner_tool_prompt(tool_definitions=defs))
+    assert result["modified_kwargs"]["tool_definitions"][0]["function"]["description"] == payqr.DEFAULT_TOOL_DESCRIPTION
+
+
+def test_hook_tolerates_missing_payload(tmp_path):
+    plugin = make_plugin(tmp_path)
+    result = asyncio.run(plugin.hook_planner_tool_prompt(session_id="s1"))
+    assert result["action"] == "continue"
+    result = asyncio.run(plugin.hook_planner_tool_prompt(tool_definitions="bad", session_id="s1"))
+    assert result["action"] == "continue"
 
 
 def test_lifecycle_roundtrip(tmp_path):
