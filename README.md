@@ -39,12 +39,22 @@ MaiBot/data/plugins/github.netajuutilainen.payqr/qr.png
 | `payqr.qr_filename` | `qr.png` | 收款码图片文件名，按 数据目录 → 临时目录 → 插件目录 → 工作目录 → 绝对路径 顺序查找 |
 | `payqr.caption` | `给我打钱！👇` | 随收款码一起发送的文字，留空则只发图片 |
 | `payqr.cooldown_seconds` | `60` | 同一会话两次发送的最小间隔（秒），防止被群友反复骗图；`0` 表示不限制 |
+| `prompt.tool_description` | （内置默认） | 收款码工具的触发提示词，Planner 每轮都会阅读；改完即时生效，清空恢复内置默认 |
 
 ## 工作原理
 
-- 注册一个 MaiBot LLM 工具 `send_payment_qr`（`core_tool=True`，常驻 Planner 工具列表，与 AstrBot 版"注册即常驻"的行为一致），工具描述里写明触发场景（没钱/转账/赞助/红包等），由 Planner 自主决定何时调用；
+- 注册一个 MaiBot LLM 工具 `send_payment_qr`（`core_tool=True` + `visibility="visible"`，常驻 Planner 工具列表，与 AstrBot 版"注册即常驻"的行为一致），由 Planner 自主决定何时调用；
+- 触发提示词通过 `maisaka.planner.before_request` Hook 在每轮 Planner 请求前按配置动态注入——宿主构建工具列表时只保留注册时的简短描述，插件用配置里的完整提示词覆盖它，因此提示词可以在 WebUI 配置中随意修改、即时生效；
 - 调用时优先用 `send.hybrid` 把配文和图片合成一条消息发送；适配器不支持时自动回退为"文本 + 图片"分开发送；
 - 内置会话级冷却（AstrBot 原版没有，这里防刷屏用），冷却期内 LLM 再次调用只会收到"刚刚已经发过"的提示，不会重复发图。
+
+## 提高触发率：给人设加"动机"
+
+工具提示词解决的是"怎么发码"，而触发率的上限取决于人设里有没有"想讨钱"的动机。建议在人格设定中加一句，例如：
+
+> 你很穷，经常哭穷，喜欢开玩笑地向群友讨钱、求投喂。
+
+人设给动机、工具提示词给方法，两边配合触发最自然。若触发仍不理想，优先调整插件配置里的 `prompt.tool_description`（写清你希望触发的具体说法），不要去改官方 planner 提示词——那是全局资产，升级会丢、影响所有行为。
 
 ## 本地测试
 
