@@ -16,7 +16,7 @@ from typing import Any, ClassVar
 from maibot_sdk import Field, HookHandler, MaiBotPlugin, PluginConfigBase, Tool
 from maibot_sdk.types import CONFIG_RELOAD_SCOPE_SELF, ErrorPolicy, HookMode
 
-SUPPORTED_CONFIG_VERSION = "1.1.0"
+SUPPORTED_CONFIG_VERSION = "1.2.0"
 
 PLUGIN_ID = "github.netajuutilainen.payqr"
 
@@ -26,8 +26,9 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 logger = logging.getLogger(__name__)
 
 MSG_NOT_CONFIGURED = (
-    "收款码还没有配置或文件不存在，请让管理员把收款码图片放进插件数据目录 "
-    f"data/plugins/{PLUGIN_ID}/ 下，并确认配置里的文件名正确。"
+    "收款码还没有配置或文件不存在。请让管理员把收款码图片放进插件数据目录 "
+    f"data/plugins/{PLUGIN_ID}/ 下（只支持该目录及其子目录内的相对文件名，不支持绝对路径），"
+    "并确认配置里的文件名正确。"
 )
 
 DEFAULT_TOOL_DESCRIPTION = (
@@ -89,8 +90,8 @@ class PayQRSectionConfig(PluginConfigBase):
     qr_filename: str = Field(
         default="qr.png",
         description=(
-            "收款码图片文件名（支持 png/jpg/jpeg/bmp/webp）。把图片放到插件数据目录 "
-            f"data/plugins/{PLUGIN_ID}/ 下即可，替换文件无需重启；也支持绝对路径。"
+            "收款码图片文件名（支持 png/jpg/jpeg/bmp/webp）。只允许插件数据目录 "
+            f"data/plugins/{PLUGIN_ID}/ 及其子目录内的相对路径，不支持绝对路径；替换文件无需重启。"
         ),
         json_schema_extra={"placeholder": "qr.png"},
     )
@@ -102,6 +103,11 @@ class PayQRSectionConfig(PluginConfigBase):
         default=60,
         ge=0,
         description="同一会话两次发送收款码的最小间隔（秒），0 表示不限制",
+    )
+    group_whitelist: list[str] = Field(
+        default_factory=list,
+        description="群聊白名单（QQ 群号）。为空不限制；非空时仅这些群可触发收款码，私聊不受影响",
+        json_schema_extra={"hint": "留空 = 所有群可用；填写后白名单之外的群不会触发"},
     )
 
 
@@ -172,20 +178,30 @@ class PayQRPlugin(MaiBotPlugin):
     # ---------- 核心逻辑 ----------
 
     def _qr_candidates(self) -> list[Path]:
+        """解析收款码候选路径。
+
+        安全约束（插件中心评审要求）：只接受插件数据目录 / 临时目录内的相对路径，
+        绝对路径一律拒绝；相对路径中的 ``..``、盘符、根目录等越界形式经
+        resolve + relative_to 校验剔除，确保文件只能落在 ctx.paths 授权范围内。
+        """
         raw = (self.config.payqr.qr_filename or "").strip()
         if not raw:
             return []
         raw_path = Path(raw)
         if raw_path.is_absolute():
-            return [raw_path]
-        candidates: list[Path] = []
+            return []
         try:
-            candidates.append(self.ctx.paths.data_dir / raw_path)
-            candidates.append(self.ctx.paths.runtime_dir / raw_path)
+            roots = [Path(self.ctx.paths.data_dir), Path(self.ctx.paths.runtime_dir)]
         except Exception:
-            pass
-        candidates.append(Path(__file__).resolve().parent / raw_path)
-        candidates.append(Path.cwd() / raw_path)
+            return []
+        candidates: list[Path] = []
+        for root in roots:
+            try:
+                resolved = (root / raw_path).resolve()
+                resolved.relative_to(root.resolve())
+            except (ValueError, OSError):
+                continue
+            candidates.append(resolved)
         return candidates
 
     def _find_qr_path(self) -> Path | None:
@@ -227,6 +243,18 @@ class PayQRPlugin(MaiBotPlugin):
         image_b64 = base64.b64encode(data).decode("ascii")
         self._image_cache = (str(path), mtime, image_b64)
         return image_b64, ""
+
+    def _check_chat_allowed(self, group_id: str) -> tuple[bool, str]:
+        """群聊白名单：为空不限制；非空时仅白名单内的群可用（私聊不受影响）。"""
+        whitelist = [str(g).strip() for g in (self.config.payqr.group_whitelist or []) if str(g).strip()]
+        if not whitelist:
+            return True, ""
+        if not group_id:
+            return True, ""
+        if group_id in whitelist:
+            return True, ""
+        logger.info("[PayQR] 群 %s 不在白名单，拒绝发送", group_id)
+        return False, "当前群未启用收款码功能，请不要在此发送。"
 
     async def _send_qr(self, image_b64: str, stream_id: str) -> tuple[bool, str]:
         caption = (self.config.payqr.caption or "").strip()
@@ -270,6 +298,10 @@ class PayQRPlugin(MaiBotPlugin):
             return {"content": "无法确定当前聊天的会话 ID，未发送收款码。"}
         if not self.config.plugin.enabled:
             return {"content": "收款码功能当前未启用。"}
+
+        allowed, deny_reason = self._check_chat_allowed(str(kwargs.get("group_id") or "").strip())
+        if not allowed:
+            return {"content": deny_reason}
 
         image_b64, err = self._load_qr_image()
         if err:

@@ -241,6 +241,67 @@ def test_hook_tolerates_missing_payload(tmp_path):
     assert result["action"] == "continue"
 
 
+def test_absolute_path_rejected(tmp_path):
+    # 绝对路径即使真实存在也必须被拒绝（评审要求：路径限定在 ctx.paths 内）
+    evil_dir = tmp_path / "evil"
+    evil_dir.mkdir(parents=True, exist_ok=True)
+    (evil_dir / "qr.png").write_bytes(PNG_1X1_BYTES)
+    plugin = make_plugin(tmp_path, drop_qr=False, qr_filename=str(evil_dir / "qr.png"))
+    result = call_tool(plugin, stream_id="s1")
+    assert "不存在" in result["content"], result
+    assert plugin._ctx.send.calls == [], "绝对路径必须被拒绝"
+
+
+def test_traversal_rejected(tmp_path):
+    # ../ 穿越到数据目录上一级（plugins 目录）的图片必须被拒绝
+    plugin = make_plugin(tmp_path, drop_qr=False, qr_filename="../qr.png")
+    (plugin._ctx.paths.data_dir.parent / "qr.png").write_bytes(PNG_1X1_BYTES)
+    result = call_tool(plugin, stream_id="s1")
+    assert "不存在" in result["content"], result
+    assert plugin._ctx.send.calls == [], ".. 穿越必须被拒绝"
+
+
+def test_subdir_within_data_dir_allowed(tmp_path):
+    plugin = make_plugin(tmp_path, drop_qr=False, qr_filename="sub/qr.png")
+    sub = plugin._ctx.paths.data_dir / "sub"
+    sub.mkdir(parents=True, exist_ok=True)
+    (sub / "qr.png").write_bytes(PNG_1X1_BYTES)
+    result = call_tool(plugin, stream_id="s1")
+    assert "成功" in result["content"], result
+
+
+def test_runtime_dir_candidate(tmp_path):
+    plugin = make_plugin(tmp_path, drop_qr=False)
+    (plugin._ctx.paths.runtime_dir / "qr.png").write_bytes(PNG_1X1_BYTES)
+    result = call_tool(plugin, stream_id="s1")
+    assert "成功" in result["content"], result
+
+
+def test_whitelist_blocks_unlisted_group(tmp_path):
+    plugin = make_plugin(tmp_path, group_whitelist=["111"])
+    result = call_tool(plugin, stream_id="s1", group_id="222")
+    assert "未启用" in result["content"], result
+    assert plugin._ctx.send.calls == [], "白名单之外的群不应发送"
+
+
+def test_whitelist_allows_listed_group(tmp_path):
+    plugin = make_plugin(tmp_path, group_whitelist=["111"])
+    result = call_tool(plugin, stream_id="s1", group_id="111")
+    assert "成功" in result["content"], result
+
+
+def test_whitelist_private_chat_unaffected(tmp_path):
+    plugin = make_plugin(tmp_path, group_whitelist=["111"])
+    result = call_tool(plugin, stream_id="s1")
+    assert "成功" in result["content"], result
+
+
+def test_empty_whitelist_allows_any_group(tmp_path):
+    plugin = make_plugin(tmp_path)
+    result = call_tool(plugin, stream_id="s1", group_id="999")
+    assert "成功" in result["content"], result
+
+
 def test_lifecycle_roundtrip(tmp_path):
     plugin = make_plugin(tmp_path, cooldown_seconds=60)
     asyncio.run(plugin.on_load())
