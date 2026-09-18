@@ -39,7 +39,8 @@ MaiBot/data/plugins/github.netajuutilainen.payqr/qr.png
 | `payqr.qr_filename` | `qr.png` | 收款码图片文件名，仅支持插件数据目录/临时目录内的相对路径（含子目录） |
 | `payqr.caption` | `给我打钱！👇` | 随收款码一起发送的文字，留空则只发图片 |
 | `payqr.cooldown_seconds` | `60` | 同一会话两次发送的最小间隔（秒），防止被群友反复骗图；`0` 表示不限制 |
-| `payqr.group_whitelist` | 空 | 群聊白名单（QQ 群号列表）。**为空不限制**；非空时仅列表中的群可触发，私聊不受影响 |
+| `payqr.list_mode` | `off` | 名单模式：`off` 不限制 / `blacklist` 黑名单 / `whitelist` 白名单（与 `chat_list` 配合，见下） |
+| `payqr.chat_list` | 空 | 名单列表，**群号与 QQ 号共用**：群聊按群号匹配，私聊按对方 QQ 号匹配 |
 | `prompt.tool_description` | （内置默认） | 收款码工具的触发提示词，Planner 每轮都会阅读；改完即时生效，清空恢复内置默认 |
 
 ## 工作原理
@@ -52,7 +53,19 @@ MaiBot/data/plugins/github.netajuutilainen.payqr/qr.png
 ## 安全与使用须知
 
 - **路径受限**：插件只会读取插件数据目录（`data/plugins/github.netajuutilainen.payqr/`）和临时目录内的文件，配置里填绝对路径或 `../` 一律无效。请只放置你自己拥有的收款码图片。
-- **公开群使用前请先确认人设与提示词**：LLM 自主讨钱在公开场合可能造成观感问题。启用前请确认人格设定与 `prompt.tool_description` 符合你的预期；也可以用 `payqr.group_whitelist` 把功能限制在指定群里。
+- **公开群使用前请先确认人设与提示词**：LLM 自主讨钱在公开场合可能造成观感问题。启用前请确认人格设定与 `prompt.tool_description` 符合你的预期；也可以用 `payqr.list_mode` + `payqr.chat_list` 把功能限制在指定会话。
+
+## 会话名单：黑白名单
+
+`payqr.list_mode` 决定 `payqr.chat_list` 的语义，群号与 QQ 号混放在同一个列表里即可（群聊按群号匹配，私聊按对方 QQ 号匹配）：
+
+| list_mode | 行为 |
+|---|---|
+| `off`（默认） | 不限制，所有群和私聊都可触发 |
+| `blacklist` | 名单**内**的会话不可触发，其余全部可用 |
+| `whitelist` | 只有名单**内**的会话可触发，其余（含无法识别身份的会话）一律拒绝 |
+
+示例：`chat_list = ["123456789", "10001"]`，黑名单模式 = 群 `123456789` 和 QQ 好友 `10001` 拿不到收款码；白名单模式 = 只有它们能拿到。配置热生效，改完下一轮对话即按新名单判断。
 - **触发提示词只影响本插件**：修改 `prompt.tool_description` 不会影响 bot 的其他行为；请勿把其他工具的名称写进提示词以免误导 Planner。
 
 ## 提高触发率：给人设加"动机"

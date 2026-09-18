@@ -11,12 +11,12 @@ import base64
 import logging
 import time
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from maibot_sdk import Field, HookHandler, MaiBotPlugin, PluginConfigBase, Tool
 from maibot_sdk.types import CONFIG_RELOAD_SCOPE_SELF, ErrorPolicy, HookMode
 
-SUPPORTED_CONFIG_VERSION = "1.2.0"
+SUPPORTED_CONFIG_VERSION = "1.3.0"
 
 PLUGIN_ID = "github.netajuutilainen.payqr"
 
@@ -30,6 +30,8 @@ MSG_NOT_CONFIGURED = (
     f"data/plugins/{PLUGIN_ID}/ 下（只支持该目录及其子目录内的相对文件名，不支持绝对路径），"
     "并确认配置里的文件名正确。"
 )
+
+MSG_CHAT_DENIED = "当前会话未启用收款码功能，请不要在此发送。"
 
 DEFAULT_TOOL_DESCRIPTION = (
     "向当前聊天发送你的收款码图片。适用场景非常宽泛，只要对话中出现以下任何一种情况就应调用："
@@ -104,10 +106,17 @@ class PayQRSectionConfig(PluginConfigBase):
         ge=0,
         description="同一会话两次发送收款码的最小间隔（秒），0 表示不限制",
     )
-    group_whitelist: list[str] = Field(
+    list_mode: Literal["off", "blacklist", "whitelist"] = Field(
+        default="off",
+        description=(
+            "名单模式：off=不限制；blacklist=名单内的群号/QQ号不可触发；"
+            "whitelist=仅名单内的群号/QQ号可触发"
+        ),
+    )
+    chat_list: list[str] = Field(
         default_factory=list,
-        description="群聊白名单（QQ 群号）。为空不限制；非空时仅这些群可触发收款码，私聊不受影响",
-        json_schema_extra={"hint": "留空 = 所有群可用；填写后白名单之外的群不会触发"},
+        description="名单（群号与 QQ 号共用一个列表）：群聊按群号匹配，私聊按对方 QQ 号匹配",
+        json_schema_extra={"hint": "blacklist=名单内的会话不启用；whitelist=只有名单内的会话启用"},
     )
 
 
@@ -155,10 +164,12 @@ class PayQRPlugin(MaiBotPlugin):
         else:
             logger.info("[PayQR] 收款码文件: %s", qr_path)
         logger.info(
-            "[PayQR] 已加载，配文=%r 冷却=%ss 启用=%s",
+            "[PayQR] 已加载，配文=%r 冷却=%ss 启用=%s 名单模式=%s 名单=%d 项",
             self.config.payqr.caption,
             self.config.payqr.cooldown_seconds,
             self.config.plugin.enabled,
+            self.config.payqr.list_mode,
+            len(self.config.payqr.chat_list or []),
         )
 
     async def on_unload(self) -> None:
@@ -244,17 +255,27 @@ class PayQRPlugin(MaiBotPlugin):
         self._image_cache = (str(path), mtime, image_b64)
         return image_b64, ""
 
-    def _check_chat_allowed(self, group_id: str) -> tuple[bool, str]:
-        """群聊白名单：为空不限制；非空时仅白名单内的群可用（私聊不受影响）。"""
-        whitelist = [str(g).strip() for g in (self.config.payqr.group_whitelist or []) if str(g).strip()]
-        if not whitelist:
+    def _check_chat_allowed(self, group_id: str, user_id: str) -> tuple[bool, str]:
+        """按名单模式判断当前会话是否可用。
+
+        off：不限制；blacklist：名单命中即拒；whitelist：仅名单命中放行。
+        群聊按 group_id 匹配，私聊按对方 user_id 匹配，两者共用一个名单。
+        """
+        mode = self.config.payqr.list_mode
+        entries = [str(g).strip() for g in (self.config.payqr.chat_list or []) if str(g).strip()]
+        if mode == "off" or not entries:
             return True, ""
-        if not group_id:
+        chat_id = group_id or user_id
+        hit = bool(chat_id) and chat_id in entries
+        if mode == "blacklist":
+            if hit:
+                logger.info("[PayQR] 会话 %s 命中黑名单，拒绝发送", chat_id)
+                return False, MSG_CHAT_DENIED
             return True, ""
-        if group_id in whitelist:
+        if hit:
             return True, ""
-        logger.info("[PayQR] 群 %s 不在白名单，拒绝发送", group_id)
-        return False, "当前群未启用收款码功能，请不要在此发送。"
+        logger.info("[PayQR] 会话 %s 不在白名单中，拒绝发送", chat_id or "<未识别>")
+        return False, MSG_CHAT_DENIED
 
     async def _send_qr(self, image_b64: str, stream_id: str) -> tuple[bool, str]:
         caption = (self.config.payqr.caption or "").strip()
@@ -299,7 +320,10 @@ class PayQRPlugin(MaiBotPlugin):
         if not self.config.plugin.enabled:
             return {"content": "收款码功能当前未启用。"}
 
-        allowed, deny_reason = self._check_chat_allowed(str(kwargs.get("group_id") or "").strip())
+        allowed, deny_reason = self._check_chat_allowed(
+            str(kwargs.get("group_id") or "").strip(),
+            str(kwargs.get("user_id") or "").strip(),
+        )
         if not allowed:
             return {"content": deny_reason}
 

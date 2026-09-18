@@ -277,29 +277,59 @@ def test_runtime_dir_candidate(tmp_path):
     assert "成功" in result["content"], result
 
 
-def test_whitelist_blocks_unlisted_group(tmp_path):
-    plugin = make_plugin(tmp_path, group_whitelist=["111"])
-    result = call_tool(plugin, stream_id="s1", group_id="222")
-    assert "未启用" in result["content"], result
-    assert plugin._ctx.send.calls == [], "白名单之外的群不应发送"
+def test_mode_off_ignores_list(tmp_path):
+    plugin = make_plugin(tmp_path, chat_list=["111", "888"])
+    assert "成功" in call_tool(plugin, stream_id="s1", group_id="111", user_id="777")["content"]
+    assert "成功" in call_tool(plugin, stream_id="s2", group_id="222", user_id="999")["content"]
+    assert "成功" in call_tool(plugin, stream_id="s3")["content"]  # 私聊
 
 
-def test_whitelist_allows_listed_group(tmp_path):
-    plugin = make_plugin(tmp_path, group_whitelist=["111"])
-    result = call_tool(plugin, stream_id="s1", group_id="111")
-    assert "成功" in result["content"], result
+def test_blacklist_blocks_listed_group_and_account(tmp_path):
+    plugin = make_plugin(tmp_path, list_mode="blacklist", chat_list=["111", "888"])
+    r1 = call_tool(plugin, stream_id="s1", group_id="111", user_id="777")
+    assert "未启用" in r1["content"], r1
+    assert plugin._ctx.send.calls == [], "黑名单内的群不应发送"
+    r2 = call_tool(plugin, stream_id="s2", user_id="888")  # 私聊命中 QQ 号
+    assert "未启用" in r2["content"], r2
+    assert len(plugin._ctx.send.calls) == 0
 
 
-def test_whitelist_private_chat_unaffected(tmp_path):
-    plugin = make_plugin(tmp_path, group_whitelist=["111"])
-    result = call_tool(plugin, stream_id="s1")
-    assert "成功" in result["content"], result
+def test_blacklist_allows_unlisted(tmp_path):
+    plugin = make_plugin(tmp_path, list_mode="blacklist", chat_list=["111", "888"])
+    assert "成功" in call_tool(plugin, stream_id="s1", group_id="222", user_id="777")["content"]
+    assert "成功" in call_tool(plugin, stream_id="s2", user_id="999")["content"]
 
 
-def test_empty_whitelist_allows_any_group(tmp_path):
-    plugin = make_plugin(tmp_path)
-    result = call_tool(plugin, stream_id="s1", group_id="999")
-    assert "成功" in result["content"], result
+def test_whitelist_only_allows_listed(tmp_path):
+    plugin = make_plugin(tmp_path, list_mode="whitelist", chat_list=["111", "888"])
+    assert "成功" in call_tool(plugin, stream_id="s1", group_id="111", user_id="777")["content"]
+    assert "成功" in call_tool(plugin, stream_id="s2", user_id="888")["content"]
+    r3 = call_tool(plugin, stream_id="s3", group_id="222", user_id="777")
+    assert "未启用" in r3["content"], r3
+    r4 = call_tool(plugin, stream_id="s4", user_id="999")  # 私聊不在白名单
+    assert "未启用" in r4["content"], r4
+    assert len(plugin._ctx.send.calls) == 2
+
+
+def test_whitelist_denies_unknown_identity(tmp_path):
+    # 白名单模式下连群号/账号都识别不了 → 拒绝（fail closed）
+    plugin = make_plugin(tmp_path, list_mode="whitelist", chat_list=["111"])
+    r = call_tool(plugin, stream_id="s1")
+    assert "未启用" in r["content"], r
+    assert plugin._ctx.send.calls == []
+
+
+def test_blacklist_allows_unknown_identity(tmp_path):
+    # 黑名单模式下识别不了身份 → 放行（未命中名单）
+    plugin = make_plugin(tmp_path, list_mode="blacklist", chat_list=["111"])
+    assert "成功" in call_tool(plugin, stream_id="s1")["content"]
+
+
+def test_empty_list_behaves_like_off(tmp_path):
+    plugin = make_plugin(tmp_path, list_mode="whitelist", chat_list=[])
+    assert "成功" in call_tool(plugin, stream_id="s1", group_id="999", user_id="777")["content"]
+    plugin2 = make_plugin(tmp_path, list_mode="blacklist", chat_list=["   "])
+    assert "成功" in call_tool(plugin2, stream_id="s2", group_id="999")["content"]
 
 
 def test_lifecycle_roundtrip(tmp_path):
