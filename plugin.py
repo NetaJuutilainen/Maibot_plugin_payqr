@@ -16,7 +16,7 @@ from typing import Any, ClassVar, Literal
 from maibot_sdk import Field, HookHandler, MaiBotPlugin, PluginConfigBase, Tool
 from maibot_sdk.types import CONFIG_RELOAD_SCOPE_SELF, ErrorPolicy, HookMode
 
-SUPPORTED_CONFIG_VERSION = "1.3.1"
+SUPPORTED_CONFIG_VERSION = "1.3.0"
 
 PLUGIN_ID = "github.netajuutilainen.payqr"
 
