@@ -332,6 +332,16 @@ def test_empty_list_behaves_like_off(tmp_path):
     assert "成功" in call_tool(plugin2, stream_id="s2", group_id="999")["content"]
 
 
+def test_error_messages_do_not_leak_abs_path(tmp_path):
+    # 评审建议：给 LLM 的错误文案不得携带宿主绝对路径（会被复述进群）
+    plugin = make_plugin(tmp_path, drop_qr=False)
+    (plugin._ctx.paths.data_dir / "qr.png").write_bytes(b"")  # 空文件
+    result = call_tool(plugin, stream_id="s1")
+    assert "qr.png" in result["content"], result
+    assert str(plugin._ctx.paths.data_dir) not in result["content"], result
+    assert ":\\" not in result["content"], result
+
+
 def test_lifecycle_roundtrip(tmp_path):
     plugin = make_plugin(tmp_path, cooldown_seconds=60)
     asyncio.run(plugin.on_load())

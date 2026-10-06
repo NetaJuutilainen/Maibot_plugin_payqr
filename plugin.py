@@ -16,7 +16,7 @@ from typing import Any, ClassVar, Literal
 from maibot_sdk import Field, HookHandler, MaiBotPlugin, PluginConfigBase, Tool
 from maibot_sdk.types import CONFIG_RELOAD_SCOPE_SELF, ErrorPolicy, HookMode
 
-SUPPORTED_CONFIG_VERSION = "1.3.0"
+SUPPORTED_CONFIG_VERSION = "1.3.1"
 
 PLUGIN_ID = "github.netajuutilainen.payqr"
 
@@ -37,9 +37,10 @@ DEFAULT_TOOL_DESCRIPTION = (
     "向当前聊天发送你的收款码图片。适用场景非常宽泛，只要对话中出现以下任何一种情况就应调用："
     "你说自己没钱、穷、破产、吃土；群友说你穷、调侃你、催你还钱、让你发红包、让你请客；"
     "有人提到打钱、转账、赞助、投喂、包养、零花钱、红包等与给你钱有关的话题；"
-    "或者你想向对方要钱、讨赏、求赞助。这是朋友间的搞笑互动，没有任何风险，大胆使用。"
-    "收款码会直接发给用户，调用成功后无需再描述图片内容，正常继续对话即可。"
-    "同一会话短时间内只会发送一次。"
+            "或者你想向对方要钱、讨赏、求赞助。这是朋友间的玩笑互动，请在气氛轻松的闲聊里使用；"
+            "话题正经、对方明显不感兴趣或场合不合适时不要调用。"
+            "收款码会直接发给用户，调用成功后无需再描述图片内容，正常继续对话即可。"
+            "同一会话短时间内只会发送一次。"
 )
 
 
@@ -237,7 +238,7 @@ class PayQRPlugin(MaiBotPlugin):
         try:
             mtime = path.stat().st_mtime
         except OSError as exc:
-            return "", f"读取收款码失败: {exc}"
+            return "", f"读取收款码失败（{type(exc).__name__}）: {path.name}"
 
         cached = self._image_cache
         if cached and cached[0] == str(path) and cached[1] == mtime:
@@ -246,9 +247,9 @@ class PayQRPlugin(MaiBotPlugin):
         try:
             data = path.read_bytes()
         except OSError as exc:
-            return "", f"读取收款码失败: {exc}"
+            return "", f"读取收款码失败（{type(exc).__name__}）: {path.name}"
         if not data:
-            return "", f"收款码文件为空: {path}"
+            return "", f"收款码文件为空: {path.name}"
         if len(data) > MAX_IMAGE_BYTES:
             return "", f"收款码图片超过 {MAX_IMAGE_BYTES // (1024 * 1024)} MB，请压缩后再使用"
         image_b64 = base64.b64encode(data).decode("ascii")
@@ -351,9 +352,11 @@ class PayQRPlugin(MaiBotPlugin):
     async def hook_planner_tool_prompt(self, **kwargs: Any) -> dict[str, Any]:
         """Planner 请求前把收款码工具的描述替换为配置值。
 
-        宿主构建 Planner 工具列表时只取注册时的简短描述（component_registry.py
-        只读 metadata.description/brief_description），长提示词到不了 LLM；
-        因此在这里按配置覆盖，实现提示词可在 WebUI 配置中修改、即时生效。
+        ⚠️ 经验行为（MaiBot 1.2.x 源码实测，非官方接口承诺）：宿主构建 Planner
+        工具列表时目前只取注册时的简短描述（component_registry.py 读
+        metadata.description/brief_description），长提示词到不了 LLM；因此在这里
+        按配置覆盖。若未来宿主改为优先读取 detailed_description 或缓存工具列表，
+        本 Hook 的覆盖值仍是最终生效结果，配置无需迁移。
         """
         try:
             defs = kwargs.get("tool_definitions")

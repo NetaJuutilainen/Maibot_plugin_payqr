@@ -12,6 +12,13 @@
 麦麦：哼，扫了就是好朋友！
 ```
 
+## 安全与使用须知
+
+- **公开群使用前请先确认人设与提示词**：LLM 自主讨钱在公开场合可能造成观感问题。启用前请确认人格设定与 `prompt.tool_description` 符合你的预期；也可以用 `payqr.list_mode` + `payqr.chat_list` 把功能限制在指定会话。
+- **默认名单模式为最宽松档**：`list_mode` 默认 `off`（所有会话可触发）。插件装完即用，但如果你担心公开群观感，建议把 `list_mode` 调成 `whitelist`、只放开指定会话。
+- **路径受限**：插件只会读取插件数据目录（`data/plugins/github.netajuutilainen.payqr/`）和临时目录内的文件，配置里填绝对路径或 `../` 一律无效。请只放置你自己拥有的收款码图片。
+- **触发提示词只影响本插件**：修改 `prompt.tool_description` 不会影响 bot 的其他行为；请勿把其他工具的名称写进提示词以免误导 Planner。
+
 ## 安装
 
 1. 把本目录（整个 `maibot_plugin_payqr/`）放进 MaiBot 的 `plugins/` 目录；
@@ -49,11 +56,6 @@ MaiBot/data/plugins/github.netajuutilainen.payqr/qr.png
 - 触发提示词通过 `maisaka.planner.before_request` Hook 在每轮 Planner 请求前按配置动态注入——宿主构建工具列表时只保留注册时的简短描述，插件用配置里的完整提示词覆盖它，因此提示词可以在 WebUI 配置中随意修改、即时生效；
 - 调用时优先用 `send.hybrid` 把配文和图片合成一条消息发送；适配器不支持时自动回退为"文本 + 图片"分开发送；
 - 内置会话级冷却（AstrBot 原版没有，这里防刷屏用），冷却期内 LLM 再次调用只会收到"刚刚已经发过"的提示，不会重复发图。
-
-## 安全与使用须知
-
-- **路径受限**：插件只会读取插件数据目录（`data/plugins/github.netajuutilainen.payqr/`）和临时目录内的文件，配置里填绝对路径或 `../` 一律无效。请只放置你自己拥有的收款码图片。
-- **公开群使用前请先确认人设与提示词**：LLM 自主讨钱在公开场合可能造成观感问题。启用前请确认人格设定与 `prompt.tool_description` 符合你的预期；也可以用 `payqr.list_mode` + `payqr.chat_list` 把功能限制在指定会话。
 
 ## 会话名单：黑白名单
 
